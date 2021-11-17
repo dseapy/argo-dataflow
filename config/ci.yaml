@@ -1658,6 +1658,18 @@ spec:
                               compressionType:
                                 default: lz4
                                 type: string
+                              confluentSchemaRegistry:
+                                properties:
+                                  messageFormat:
+                                    default: Native
+                                    enum:
+                                    - Raw
+                                    - Native
+                                    - JSON
+                                    type: string
+                                  url:
+                                    type: string
+                                type: object
                               enableIdempotence:
                                 default: true
                                 type: boolean
@@ -3639,6 +3651,18 @@ spec:
                                 items:
                                   type: string
                                 type: array
+                              confluentSchemaRegistry:
+                                properties:
+                                  messageFormat:
+                                    default: Native
+                                    enum:
+                                    - Raw
+                                    - Native
+                                    - JSON
+                                    type: string
+                                  url:
+                                    type: string
+                                type: object
                               fetchMin:
                                 anyOf:
                                 - type: integer
@@ -8825,6 +8849,18 @@ spec:
                         compressionType:
                           default: lz4
                           type: string
+                        confluentSchemaRegistry:
+                          properties:
+                            messageFormat:
+                              default: Native
+                              enum:
+                              - Raw
+                              - Native
+                              - JSON
+                              type: string
+                            url:
+                              type: string
+                          type: object
                         enableIdempotence:
                           default: true
                           type: boolean
@@ -10690,6 +10726,18 @@ spec:
                           items:
                             type: string
                           type: array
+                        confluentSchemaRegistry:
+                          properties:
+                            messageFormat:
+                              default: Native
+                              enum:
+                              - Raw
+                              - Native
+                              - JSON
+                              type: string
+                            url:
+                              type: string
+                          type: object
                         fetchMin:
                           anyOf:
                           - type: integer

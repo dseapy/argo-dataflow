@@ -22,6 +22,9 @@ metadata:
       net.sasl.user: ""
       net.sasl.password: ""
 
+      # Enable Schema Registry
+      schemaRegistry.url: ""
+
       [Learn about configuration](../docs/CONFIGURATION.md)
   name: dataflow-kafka-default
   namespace: argo-dataflow-system

@@ -30,11 +30,27 @@ func (m *KafkaConfig) GetMessageMaxBytes() int {
 	return int(m.MaxMessageBytes)
 }
 
+// +kubebuilder:validation:Enum=Raw;Native;JSON
+type ConfluentSchemaRegistryMessageFormat string
+
+const (
+	ConfluentSchemaRegistryMessageFormatRaw    ConfluentSchemaRegistryMessageFormat = "Raw"    // messages are same bytes stored on topic
+	ConfluentSchemaRegistryMessageFormatNative ConfluentSchemaRegistryMessageFormat = "Native" // messages are the payload (ie. AVRO serialized byte array)
+	ConfluentSchemaRegistryMessageFormatJSON   ConfluentSchemaRegistryMessageFormat = "JSON"   // messages are the JSON byte array representation of the payload
+)
+
+type ConfluentSchemaRegistryConfig struct {
+	URL string `json:"url,omitempty" protobuf:"bytes,1,opt,name=url"`
+	// +kubebuilder:default="Native"
+	MessageFormat ConfluentSchemaRegistryMessageFormat `json:"messageFormat,omitempty" protobuf:"bytes,2,opt,name=messageFormat"`
+}
+
 type Kafka struct {
 	// +kubebuilder:default=default
-	Name        string `json:"name,omitempty" protobuf:"bytes,1,opt,name=name"`
-	KafkaConfig `json:",inline" protobuf:"bytes,4,opt,name=kafkaConfig"`
-	Topic       string `json:"topic" protobuf:"bytes,3,opt,name=topic"`
+	Name                          string `json:"name,omitempty" protobuf:"bytes,1,opt,name=name"`
+	KafkaConfig                   `json:",inline" protobuf:"bytes,4,opt,name=kafkaConfig"`
+	Topic                         string                         `json:"topic" protobuf:"bytes,3,opt,name=topic"`
+	ConfluentSchemaRegistryConfig *ConfluentSchemaRegistryConfig `json:"confluentSchemaRegistry,omitempty" protobuf:"bytes,5,opt,name=confluentSchemaRegistry"`
 }
 
 func (in Kafka) GenURN(cluster, namespace string) string {
