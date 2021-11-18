@@ -4,18 +4,17 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"time"
 
-	// TODO: change back to github.com/riferrei/srclient after PR merges
-	"github.com/dseapy/srclient" 
+	// TODO: change back to github.com/riferrei/srclient after PR merges.
 	dfv1 "github.com/argoproj-labs/argo-dataflow/api/v1alpha1"
 	sharedkafka "github.com/argoproj-labs/argo-dataflow/runner/sidecar/shared/kafka"
 	"github.com/argoproj-labs/argo-dataflow/runner/sidecar/sink"
 	sharedutil "github.com/argoproj-labs/argo-dataflow/shared/util"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
+	"github.com/dseapy/srclient"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -148,9 +147,9 @@ func (h *kafkaSink) Sink(ctx context.Context, msg []byte) error {
 			}
 			recordValue = append(recordValue, msg...)
 		case srclient.Protobuf:
-			return errors.New(fmt.Sprintf("protobuf schema type is not currently supported"))
+			return fmt.Errorf("protobuf schema type is not currently supported")
 		default:
-			return errors.New(fmt.Sprintf("unknown schema type '%v'", schemaType))
+			return fmt.Errorf("unknown schema type '%v'", schemaType)
 		}
 		finalMsgValue = &recordValue
 	}

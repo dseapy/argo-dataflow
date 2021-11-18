@@ -10,13 +10,13 @@ import (
 	"sync"
 	"time"
 
-	// TODO: change back to github.com/riferrei/srclient after PR merges
-	"github.com/dseapy/srclient" 
+	// TODO: change back to github.com/riferrei/srclient after PR merges.
 	dfv1 "github.com/argoproj-labs/argo-dataflow/api/v1alpha1"
 	sharedkafka "github.com/argoproj-labs/argo-dataflow/runner/sidecar/shared/kafka"
 	"github.com/argoproj-labs/argo-dataflow/runner/sidecar/source"
 	sharedutil "github.com/argoproj-labs/argo-dataflow/shared/util"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
+	"github.com/dseapy/srclient"
 	"github.com/go-logr/logr"
 	"github.com/opentracing/opentracing-go"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -143,9 +143,9 @@ func (s *kafkaSource) processMessage(ctx context.Context, msg *kafka.Message) er
 				return err
 			}
 		case srclient.Protobuf:
-			return errors.New(fmt.Sprintf("protobuf schema type is not currently supported"))
+			return fmt.Errorf("protobuf schema type is not currently supported")
 		default:
-			return errors.New(fmt.Sprintf("unknown schema type '%v'", schemaType))
+			return fmt.Errorf("unknown schema type '%v'", schemaType)
 		}
 		msgToProcess = &msgValueBytes
 	}
