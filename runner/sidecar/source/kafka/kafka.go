@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	// TODO: change back to github.com/riferrei/srclient after PR merges
+	"github.com/dseapy/srclient" 
 	dfv1 "github.com/argoproj-labs/argo-dataflow/api/v1alpha1"
 	sharedkafka "github.com/argoproj-labs/argo-dataflow/runner/sidecar/shared/kafka"
 	"github.com/argoproj-labs/argo-dataflow/runner/sidecar/source"
@@ -21,15 +24,17 @@ import (
 )
 
 type kafkaSource struct {
-	logger     logr.Logger
-	sourceName string
-	sourceURN  string
-	consumer   *kafka.Consumer
-	topic      string
-	wg         *sync.WaitGroup
-	channels   map[int32]chan *kafka.Message
-	process    source.Process
-	totalLag   int64
+	logger                               logr.Logger
+	sourceName                           string
+	sourceURN                            string
+	consumer                             *kafka.Consumer
+	topic                                string
+	wg                                   *sync.WaitGroup
+	channels                             map[int32]chan *kafka.Message
+	process                              source.Process
+	totalLag                             int64
+	confluentSchemaRegistryClient        *srclient.SchemaRegistryClient
+	confluentSchemaRegistryMessageFormat dfv1.ConfluentSchemaRegistryMessageFormat
 }
 
 const (
@@ -72,16 +77,20 @@ func New(ctx context.Context, secretInterface corev1.SecretInterface, cluster, n
 		}
 	}, 3*time.Second, 1.2, true)
 
+	confluentSchemaRegistryClient := srclient.CreateSchemaRegistryClient(x.ConfluentSchemaRegistryConfig.URL)
+
 	s := &kafkaSource{
-		logger:     logger,
-		sourceName: sourceName,
-		sourceURN:  sourceURN,
-		consumer:   consumer,
-		topic:      x.Topic,
-		channels:   map[int32]chan *kafka.Message{}, // partition -> messages
-		wg:         &sync.WaitGroup{},
-		process:    process,
-		totalLag:   pendingUnavailable,
+		logger:                               logger,
+		sourceName:                           sourceName,
+		sourceURN:                            sourceURN,
+		consumer:                             consumer,
+		topic:                                x.Topic,
+		channels:                             map[int32]chan *kafka.Message{}, // partition -> messages
+		wg:                                   &sync.WaitGroup{},
+		process:                              process,
+		totalLag:                             pendingUnavailable,
+		confluentSchemaRegistryClient:        confluentSchemaRegistryClient,
+		confluentSchemaRegistryMessageFormat: x.ConfluentSchemaRegistryConfig.MessageFormat,
 	}
 
 	if err = consumer.Subscribe(x.Topic, func(consumer *kafka.Consumer, event kafka.Event) error {
@@ -98,6 +107,48 @@ func New(ctx context.Context, secretInterface corev1.SecretInterface, cluster, n
 func (s *kafkaSource) processMessage(ctx context.Context, msg *kafka.Message) error {
 	span, ctx := opentracing.StartSpanFromContext(ctx, fmt.Sprintf("kafka-source-%s", s.sourceName))
 	defer span.Finish()
+	msgToProcess := &msg.Value
+	if s.confluentSchemaRegistryClient != nil && s.confluentSchemaRegistryMessageFormat != dfv1.ConfluentSchemaRegistryMessageFormatRaw {
+		schemaID := binary.BigEndian.Uint32(msg.Value[1:5])
+		schema, err := s.confluentSchemaRegistryClient.GetSchema(int(schemaID))
+		if err != nil {
+			return err
+		}
+		schemaType := srclient.Avro
+		if schema.SchemaType() != nil {
+			schemaType = *schema.SchemaType()
+		}
+		var msgValueBytes []byte
+		switch schemaType {
+		case srclient.Avro:
+			if s.confluentSchemaRegistryMessageFormat == dfv1.ConfluentSchemaRegistryMessageFormatNative {
+				msgValueBytes = msg.Value[5:]
+			} else {
+				native, _, err := schema.Codec().NativeFromBinary(msg.Value[5:])
+				if err != nil {
+					return err
+				}
+				msgValueBytes, err = schema.Codec().TextualFromNative(nil, native)
+				if err != nil {
+					return err
+				}
+			}
+		case srclient.Json:
+			msgValueBytes := msg.Value[5:]
+			var v interface{}
+			if err := json.Unmarshal(msgValueBytes, &v); err != nil {
+				return err
+			}
+			if err := schema.JsonSchema().Validate(v); err != nil {
+				return err
+			}
+		case srclient.Protobuf:
+			return errors.New(fmt.Sprintf("protobuf schema type is not currently supported"))
+		default:
+			return errors.New(fmt.Sprintf("unknown schema type '%v'", schemaType))
+		}
+		msgToProcess = &msgValueBytes
+	}
 	return s.process(
 		dfv1.ContextWithMeta(
 			ctx,
@@ -107,7 +158,7 @@ func (s *kafkaSource) processMessage(ctx context.Context, msg *kafka.Message) er
 				Time:   msg.Timestamp.Unix(),
 			},
 		),
-		msg.Value,
+		*msgToProcess,
 	)
 }
 

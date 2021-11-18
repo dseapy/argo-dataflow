@@ -2,15 +2,20 @@ package kafka
 
 import (
 	"context"
+	"encoding/binary"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"time"
 
+	// TODO: change back to github.com/riferrei/srclient after PR merges
+	"github.com/dseapy/srclient" 
 	dfv1 "github.com/argoproj-labs/argo-dataflow/api/v1alpha1"
 	sharedkafka "github.com/argoproj-labs/argo-dataflow/runner/sidecar/shared/kafka"
 	"github.com/argoproj-labs/argo-dataflow/runner/sidecar/sink"
 	sharedutil "github.com/argoproj-labs/argo-dataflow/shared/util"
-	kafka "github.com/confluentinc/confluent-kafka-go/kafka"
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -20,10 +25,12 @@ import (
 var logger = sharedutil.NewLogger()
 
 type kafkaSink struct {
-	sinkName string
-	producer *kafka.Producer
-	topic    string
-	async    bool
+	sinkName                             string
+	producer                             *kafka.Producer
+	topic                                string
+	async                                bool
+	confluentSchemaRegistryClient        *srclient.SchemaRegistryClient
+	confluentSchemaRegistryMessageFormat dfv1.ConfluentSchemaRegistryMessageFormat
 }
 
 func New(ctx context.Context, sinkName string, secretInterface corev1.SecretInterface, x dfv1.KafkaSink, errorsCounter prometheus.Counter) (sink.Interface, error) {
@@ -73,7 +80,17 @@ func New(ctx context.Context, sinkName string, secretInterface corev1.SecretInte
 		}
 	}, time.Second, 1.2, true)
 
-	return &kafkaSink{sinkName, producer, x.Topic, x.Async}, nil
+	confluentSchemaRegistryClient := srclient.CreateSchemaRegistryClient(x.ConfluentSchemaRegistryConfig.URL)
+
+	s := &kafkaSink{
+		sinkName:                             sinkName,
+		producer:                             producer,
+		topic:                                x.Topic,
+		async:                                x.Async,
+		confluentSchemaRegistryClient:        confluentSchemaRegistryClient,
+		confluentSchemaRegistryMessageFormat: x.ConfluentSchemaRegistryConfig.MessageFormat,
+	}
+	return s, nil
 }
 
 func (h *kafkaSink) Sink(ctx context.Context, msg []byte) error {
@@ -88,13 +105,63 @@ func (h *kafkaSink) Sink(ctx context.Context, msg []byte) error {
 		deliveryChan = make(chan kafka.Event)
 		defer close(deliveryChan)
 	}
+	finalMsgValue := &msg
+	if h.confluentSchemaRegistryClient != nil && h.confluentSchemaRegistryMessageFormat != dfv1.ConfluentSchemaRegistryMessageFormatRaw {
+		// https://docs.confluent.io/platform/current/schema-registry/serdes-develop/index.html#how-the-naming-strategies-work
+		schema, err := h.confluentSchemaRegistryClient.GetLatestSchema(h.topic + "-value")
+		if err != nil {
+			return err
+		}
+		// https://docs.confluent.io/platform/current/schema-registry/serdes-develop/index.html#wire-format
+		schemaIDBytes := make([]byte, 4)
+		binary.BigEndian.PutUint32(schemaIDBytes, uint32(schema.ID()))
+		var recordValue []byte
+		recordValue = append(recordValue, byte(0))
+		recordValue = append(recordValue, schemaIDBytes...)
+
+		schemaType := srclient.Avro
+		if schema.SchemaType() != nil {
+			schemaType = *schema.SchemaType()
+		}
+		switch schemaType {
+		case srclient.Avro:
+			if h.confluentSchemaRegistryMessageFormat == dfv1.ConfluentSchemaRegistryMessageFormatNative {
+				recordValue = append(recordValue, msg...)
+			} else {
+				native, _, err := schema.Codec().NativeFromTextual(msg)
+				if err != nil {
+					return err
+				}
+				nativeBytes, err := schema.Codec().BinaryFromNative(nil, native)
+				if err != nil {
+					return err
+				}
+				recordValue = append(recordValue, nativeBytes...)
+			}
+		case srclient.Json:
+			var v interface{}
+			if err := json.Unmarshal(msg, &v); err != nil {
+				return err
+			}
+			if err := schema.JsonSchema().Validate(v); err != nil {
+				return err
+			}
+			recordValue = append(recordValue, msg...)
+		case srclient.Protobuf:
+			return errors.New(fmt.Sprintf("protobuf schema type is not currently supported"))
+		default:
+			return errors.New(fmt.Sprintf("unknown schema type '%v'", schemaType))
+		}
+		finalMsgValue = &recordValue
+	}
+
 	if err := h.producer.Produce(&kafka.Message{
 		TopicPartition: kafka.TopicPartition{Topic: &h.topic, Partition: kafka.PartitionAny},
 		Headers: []kafka.Header{
 			{Key: "source", Value: []byte(m.Source)},
 			{Key: "id", Value: []byte(m.ID)},
 		},
-		Value: msg,
+		Value: *finalMsgValue,
 	}, deliveryChan); err != nil {
 		return err
 	}
