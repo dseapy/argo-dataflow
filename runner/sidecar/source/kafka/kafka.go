@@ -10,13 +10,12 @@ import (
 	"sync"
 	"time"
 
-	// TODO: change back to github.com/riferrei/srclient after PR merges.
 	dfv1 "github.com/argoproj-labs/argo-dataflow/api/v1alpha1"
 	sharedkafka "github.com/argoproj-labs/argo-dataflow/runner/sidecar/shared/kafka"
 	"github.com/argoproj-labs/argo-dataflow/runner/sidecar/source"
 	sharedutil "github.com/argoproj-labs/argo-dataflow/shared/util"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
-	"github.com/dseapy/srclient"
+	"github.com/riferrei/srclient"
 	"github.com/go-logr/logr"
 	"github.com/opentracing/opentracing-go"
 	"k8s.io/apimachinery/pkg/util/wait"

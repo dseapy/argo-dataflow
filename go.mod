@@ -13,7 +13,6 @@ require (
 	github.com/bombsimon/logrusr v1.1.0
 	github.com/confluentinc/confluent-kafka-go v1.7.0
 	github.com/doublerebel/bellows v0.0.0-20160303004610-f177d92a03d3
-	github.com/dseapy/srclient v0.4.1-0.20211118082551-4506f83266d9
 	github.com/evanphx/json-patch v4.9.0+incompatible
 	github.com/go-git/go-git/v5 v5.3.0
 	github.com/go-logr/logr v0.4.0
@@ -111,6 +110,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/procfs v0.6.0 // indirect
+	github.com/riferrei/srclient v0.4.1-0.20211121142002-8241dbd04c21 // indirect
 	github.com/santhosh-tekuri/jsonschema/v5 v5.0.0 // indirect
 	github.com/sergi/go-diff v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
