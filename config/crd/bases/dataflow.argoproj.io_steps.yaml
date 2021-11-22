@@ -1598,10 +1598,10 @@ spec:
                           type: string
                         confluentSchemaRegistry:
                           properties:
-                            messageFormat:
+                            converterType:
                               default: Native
                               enum:
-                              - Raw
+                              - ""
                               - Native
                               - JSON
                               type: string
@@ -3475,10 +3475,10 @@ spec:
                           type: array
                         confluentSchemaRegistry:
                           properties:
-                            messageFormat:
+                            converterType:
                               default: Native
                               enum:
-                              - Raw
+                              - ""
                               - Native
                               - JSON
                               type: string
