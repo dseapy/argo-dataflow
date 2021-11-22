@@ -117,20 +117,22 @@ func (s *kafkaSource) processMessage(ctx context.Context, msg *kafka.Message) er
 		if schema.SchemaType() != nil {
 			schemaType = *schema.SchemaType()
 		}
-		var msgValueBytes []byte
+		var msgToProcessBytes []byte
 		switch schemaType {
 		case srclient.Avro:
 			if s.confluentSchemaRegistryConverterType == dfv1.ConfluentSchemaRegistryConverterTypeNative {
-				msgValueBytes = msg.Value[5:]
-			} else {
+				msgToProcessBytes = msg.Value[5:]
+			} else if s.confluentSchemaRegistryConverterType == dfv1.ConfluentSchemaRegistryConverterTypeJSON {
 				native, _, err := schema.Codec().NativeFromBinary(msg.Value[5:])
 				if err != nil {
 					return err
 				}
-				msgValueBytes, err = schema.Codec().TextualFromNative(nil, native)
+				msgToProcessBytes, err = schema.Codec().TextualFromNative(nil, native)
 				if err != nil {
 					return err
 				}
+			} else {
+				return fmt.Errorf("unknown converter type '%v'", s.confluentSchemaRegistryConverterType)
 			}
 		case srclient.Json:
 			msgValueBytes := msg.Value[5:]
@@ -146,7 +148,7 @@ func (s *kafkaSource) processMessage(ctx context.Context, msg *kafka.Message) er
 		default:
 			return fmt.Errorf("unknown schema type '%v'", schemaType)
 		}
-		msgToProcess = &msgValueBytes
+		msgToProcess = &msgToProcessBytes
 	}
 	return s.process(
 		dfv1.ContextWithMeta(

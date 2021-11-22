@@ -103,7 +103,7 @@ func (h *kafkaSink) Sink(ctx context.Context, msg []byte) error {
 		deliveryChan = make(chan kafka.Event)
 		defer close(deliveryChan)
 	}
-	finalMsgValue := &msg
+	kafkaMessageValue := &msg
 	if h.confluentSchemaRegistryClient != nil && h.confluentSchemaRegistryConverterType != dfv1.ConfluentSchemaRegistryConverterTypeNone {
 		// https://docs.confluent.io/platform/current/schema-registry/serdes-develop/index.html#how-the-naming-strategies-work
 		schema, err := h.confluentSchemaRegistryClient.GetLatestSchema(h.topic + "-value")
@@ -113,9 +113,9 @@ func (h *kafkaSink) Sink(ctx context.Context, msg []byte) error {
 		// https://docs.confluent.io/platform/current/schema-registry/serdes-develop/index.html#wire-format
 		schemaIDBytes := make([]byte, 4)
 		binary.BigEndian.PutUint32(schemaIDBytes, uint32(schema.ID()))
-		var recordValue []byte
-		recordValue = append(recordValue, byte(0))
-		recordValue = append(recordValue, schemaIDBytes...)
+		var kafkaMessageValueBytes []byte
+		kafkaMessageValueBytes = append(kafkaMessageValueBytes, byte(0))
+		kafkaMessageValueBytes = append(kafkaMessageValueBytes, schemaIDBytes...)
 
 		schemaType := srclient.Avro
 		if schema.SchemaType() != nil {
@@ -124,8 +124,8 @@ func (h *kafkaSink) Sink(ctx context.Context, msg []byte) error {
 		switch schemaType {
 		case srclient.Avro:
 			if h.confluentSchemaRegistryConverterType == dfv1.ConfluentSchemaRegistryConverterTypeNative {
-				recordValue = append(recordValue, msg...)
-			} else {
+				kafkaMessageValueBytes = append(kafkaMessageValueBytes, msg...)
+			} else if h.confluentSchemaRegistryConverterType == dfv1.ConfluentSchemaRegistryConverterTypeJSON {
 				native, _, err := schema.Codec().NativeFromTextual(msg)
 				if err != nil {
 					return err
@@ -134,7 +134,9 @@ func (h *kafkaSink) Sink(ctx context.Context, msg []byte) error {
 				if err != nil {
 					return err
 				}
-				recordValue = append(recordValue, nativeBytes...)
+				kafkaMessageValueBytes = append(kafkaMessageValueBytes, nativeBytes...)
+			} else {
+				return fmt.Errorf("unknown converter type '%v'", h.confluentSchemaRegistryConverterType)
 			}
 		case srclient.Json:
 			var v interface{}
@@ -144,13 +146,13 @@ func (h *kafkaSink) Sink(ctx context.Context, msg []byte) error {
 			if err := schema.JsonSchema().Validate(v); err != nil {
 				return err
 			}
-			recordValue = append(recordValue, msg...)
+			kafkaMessageValueBytes = append(kafkaMessageValueBytes, msg...)
 		case srclient.Protobuf:
 			return fmt.Errorf("protobuf schema type is not currently supported")
 		default:
 			return fmt.Errorf("unknown schema type '%v'", schemaType)
 		}
-		finalMsgValue = &recordValue
+		kafkaMessageValue = &kafkaMessageValueBytes
 	}
 
 	if err := h.producer.Produce(&kafka.Message{
@@ -159,7 +161,7 @@ func (h *kafkaSink) Sink(ctx context.Context, msg []byte) error {
 			{Key: "source", Value: []byte(m.Source)},
 			{Key: "id", Value: []byte(m.ID)},
 		},
-		Value: *finalMsgValue,
+		Value: *kafkaMessageValue,
 	}, deliveryChan); err != nil {
 		return err
 	}
