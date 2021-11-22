@@ -30,19 +30,19 @@ func (m *KafkaConfig) GetMessageMaxBytes() int {
 	return int(m.MaxMessageBytes)
 }
 
-// +kubebuilder:validation:Enum=Raw;Native;JSON
-type ConfluentSchemaRegistryMessageFormat string
+// +kubebuilder:validation:Enum="";Native;JSON
+type ConfluentSchemaRegistryConverterType string
 
 const (
-	ConfluentSchemaRegistryMessageFormatRaw    ConfluentSchemaRegistryMessageFormat = "Raw"    // messages are same bytes stored on topic
-	ConfluentSchemaRegistryMessageFormatNative ConfluentSchemaRegistryMessageFormat = "Native" // messages are the payload (ie. AVRO serialized byte array)
-	ConfluentSchemaRegistryMessageFormatJSON   ConfluentSchemaRegistryMessageFormat = "JSON"   // messages are the JSON byte array representation of the payload
+	ConfluentSchemaRegistryConverterTypeNone   ConfluentSchemaRegistryConverterType = ""       // argo dataflow "msg"s are same bytes stored on topic
+	ConfluentSchemaRegistryConverterTypeNative ConfluentSchemaRegistryConverterType = "Native" // argo dataflow "msg"s are the payload (ie. AVRO serialized byte array)
+	ConfluentSchemaRegistryConverterTypeJSON   ConfluentSchemaRegistryConverterType = "JSON"   // argo dataflow "msg"s are the JSON byte array representation of the payload
 )
 
 type ConfluentSchemaRegistryConfig struct {
 	URL string `json:"url,omitempty" protobuf:"bytes,1,opt,name=url"`
 	// +kubebuilder:default="Native"
-	MessageFormat ConfluentSchemaRegistryMessageFormat `json:"messageFormat,omitempty" protobuf:"bytes,2,opt,name=messageFormat"`
+	ConverterType ConfluentSchemaRegistryConverterType `json:"converterType,omitempty" protobuf:"bytes,2,opt,name=converterType"`
 }
 
 type Kafka struct {

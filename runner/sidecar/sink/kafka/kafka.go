@@ -13,9 +13,9 @@ import (
 	"github.com/argoproj-labs/argo-dataflow/runner/sidecar/sink"
 	sharedutil "github.com/argoproj-labs/argo-dataflow/shared/util"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
-	"github.com/riferrei/srclient"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/riferrei/srclient"
 	"k8s.io/apimachinery/pkg/util/wait"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 )
@@ -28,7 +28,7 @@ type kafkaSink struct {
 	topic                                string
 	async                                bool
 	confluentSchemaRegistryClient        *srclient.SchemaRegistryClient
-	confluentSchemaRegistryMessageFormat dfv1.ConfluentSchemaRegistryMessageFormat
+	confluentSchemaRegistryConverterType dfv1.ConfluentSchemaRegistryConverterType
 }
 
 func New(ctx context.Context, sinkName string, secretInterface corev1.SecretInterface, x dfv1.KafkaSink, errorsCounter prometheus.Counter) (sink.Interface, error) {
@@ -86,7 +86,7 @@ func New(ctx context.Context, sinkName string, secretInterface corev1.SecretInte
 		topic:                                x.Topic,
 		async:                                x.Async,
 		confluentSchemaRegistryClient:        confluentSchemaRegistryClient,
-		confluentSchemaRegistryMessageFormat: x.ConfluentSchemaRegistryConfig.MessageFormat,
+		confluentSchemaRegistryConverterType: x.ConfluentSchemaRegistryConfig.ConverterType,
 	}
 	return s, nil
 }
@@ -104,7 +104,7 @@ func (h *kafkaSink) Sink(ctx context.Context, msg []byte) error {
 		defer close(deliveryChan)
 	}
 	finalMsgValue := &msg
-	if h.confluentSchemaRegistryClient != nil && h.confluentSchemaRegistryMessageFormat != dfv1.ConfluentSchemaRegistryMessageFormatRaw {
+	if h.confluentSchemaRegistryClient != nil && h.confluentSchemaRegistryConverterType != dfv1.ConfluentSchemaRegistryConverterTypeNone {
 		// https://docs.confluent.io/platform/current/schema-registry/serdes-develop/index.html#how-the-naming-strategies-work
 		schema, err := h.confluentSchemaRegistryClient.GetLatestSchema(h.topic + "-value")
 		if err != nil {
@@ -123,7 +123,7 @@ func (h *kafkaSink) Sink(ctx context.Context, msg []byte) error {
 		}
 		switch schemaType {
 		case srclient.Avro:
-			if h.confluentSchemaRegistryMessageFormat == dfv1.ConfluentSchemaRegistryMessageFormatNative {
+			if h.confluentSchemaRegistryConverterType == dfv1.ConfluentSchemaRegistryConverterTypeNative {
 				recordValue = append(recordValue, msg...)
 			} else {
 				native, _, err := schema.Codec().NativeFromTextual(msg)

@@ -15,9 +15,9 @@ import (
 	"github.com/argoproj-labs/argo-dataflow/runner/sidecar/source"
 	sharedutil "github.com/argoproj-labs/argo-dataflow/shared/util"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
-	"github.com/riferrei/srclient"
 	"github.com/go-logr/logr"
 	"github.com/opentracing/opentracing-go"
+	"github.com/riferrei/srclient"
 	"k8s.io/apimachinery/pkg/util/wait"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 )
@@ -33,7 +33,7 @@ type kafkaSource struct {
 	process                              source.Process
 	totalLag                             int64
 	confluentSchemaRegistryClient        *srclient.SchemaRegistryClient
-	confluentSchemaRegistryMessageFormat dfv1.ConfluentSchemaRegistryMessageFormat
+	confluentSchemaRegistryConverterType dfv1.ConfluentSchemaRegistryConverterType
 }
 
 const (
@@ -89,7 +89,7 @@ func New(ctx context.Context, secretInterface corev1.SecretInterface, cluster, n
 		process:                              process,
 		totalLag:                             pendingUnavailable,
 		confluentSchemaRegistryClient:        confluentSchemaRegistryClient,
-		confluentSchemaRegistryMessageFormat: x.ConfluentSchemaRegistryConfig.MessageFormat,
+		confluentSchemaRegistryConverterType: x.ConfluentSchemaRegistryConfig.ConverterType,
 	}
 
 	if err = consumer.Subscribe(x.Topic, func(consumer *kafka.Consumer, event kafka.Event) error {
@@ -107,7 +107,7 @@ func (s *kafkaSource) processMessage(ctx context.Context, msg *kafka.Message) er
 	span, ctx := opentracing.StartSpanFromContext(ctx, fmt.Sprintf("kafka-source-%s", s.sourceName))
 	defer span.Finish()
 	msgToProcess := &msg.Value
-	if s.confluentSchemaRegistryClient != nil && s.confluentSchemaRegistryMessageFormat != dfv1.ConfluentSchemaRegistryMessageFormatRaw {
+	if s.confluentSchemaRegistryClient != nil && s.confluentSchemaRegistryConverterType != dfv1.ConfluentSchemaRegistryConverterTypeNone {
 		schemaID := binary.BigEndian.Uint32(msg.Value[1:5])
 		schema, err := s.confluentSchemaRegistryClient.GetSchema(int(schemaID))
 		if err != nil {
@@ -120,7 +120,7 @@ func (s *kafkaSource) processMessage(ctx context.Context, msg *kafka.Message) er
 		var msgValueBytes []byte
 		switch schemaType {
 		case srclient.Avro:
-			if s.confluentSchemaRegistryMessageFormat == dfv1.ConfluentSchemaRegistryMessageFormatNative {
+			if s.confluentSchemaRegistryConverterType == dfv1.ConfluentSchemaRegistryConverterTypeNative {
 				msgValueBytes = msg.Value[5:]
 			} else {
 				native, _, err := schema.Codec().NativeFromBinary(msg.Value[5:])
