@@ -103,15 +103,15 @@ func New(ctx context.Context, secretInterface corev1.SecretInterface, cluster, n
 	return s, nil
 }
 
-func (s *kafkaSource) processMessage(ctx context.Context, msg *kafka.Message) error {
-	span, ctx := opentracing.StartSpanFromContext(ctx, fmt.Sprintf("kafka-source-%s", s.sourceName))
-	defer span.Finish()
-	msgToProcess := &msg.Value
-	if s.confluentSchemaRegistryClient != nil && s.confluentSchemaRegistryConverterType != dfv1.ConfluentSchemaRegistryConverterTypeNone {
-		schemaID := binary.BigEndian.Uint32(msg.Value[1:5])
-		schema, err := s.confluentSchemaRegistryClient.GetSchema(int(schemaID))
+func convertFromConfluentMessage(client *srclient.SchemaRegistryClient,
+								 converterType dfv1.ConfluentSchemaRegistryConverterType,
+								 kafkaMessage *kafka.Message) ([]byte, error) {
+	msgToProcess := &kafkaMessage.Value
+	if converterType != dfv1.ConfluentSchemaRegistryConverterTypeNone {
+		schemaID := binary.BigEndian.Uint32(kafkaMessage.Value[1:5])
+		schema, err := client.GetSchema(int(schemaID))
 		if err != nil {
-			return err
+			return nil, err
 		}
 		schemaType := srclient.Avro
 		if schema.SchemaType() != nil {
@@ -120,35 +120,49 @@ func (s *kafkaSource) processMessage(ctx context.Context, msg *kafka.Message) er
 		var msgToProcessBytes []byte
 		switch schemaType {
 		case srclient.Avro:
-			if s.confluentSchemaRegistryConverterType == dfv1.ConfluentSchemaRegistryConverterTypeNative {
-				msgToProcessBytes = msg.Value[5:]
-			} else if s.confluentSchemaRegistryConverterType == dfv1.ConfluentSchemaRegistryConverterTypeJSON {
-				native, _, err := schema.Codec().NativeFromBinary(msg.Value[5:])
+			if converterType == dfv1.ConfluentSchemaRegistryConverterTypeNative {
+				msgToProcessBytes = kafkaMessage.Value[5:]
+			} else if converterType == dfv1.ConfluentSchemaRegistryConverterTypeJSON {
+				native, _, err := schema.Codec().NativeFromBinary(kafkaMessage.Value[5:])
 				if err != nil {
-					return err
+					return nil, err
 				}
 				msgToProcessBytes, err = schema.Codec().TextualFromNative(nil, native)
 				if err != nil {
-					return err
+					return nil, err
 				}
 			} else {
-				return fmt.Errorf("unknown converter type '%v'", s.confluentSchemaRegistryConverterType)
+				return nil, fmt.Errorf("unknown converter type '%v'", converterType)
 			}
 		case srclient.Json:
-			msgValueBytes := msg.Value[5:]
+			msgValueBytes := kafkaMessage.Value[5:]
 			var v interface{}
 			if err := json.Unmarshal(msgValueBytes, &v); err != nil {
-				return err
+				return nil, err
 			}
 			if err := schema.JsonSchema().Validate(v); err != nil {
-				return err
+				return nil, err
 			}
 		case srclient.Protobuf:
-			return fmt.Errorf("protobuf schema type is not currently supported")
+			return nil, fmt.Errorf("protobuf schema type is not currently supported")
 		default:
-			return fmt.Errorf("unknown schema type '%v'", schemaType)
+			return nil, fmt.Errorf("unknown schema type '%v'", schemaType)
 		}
 		msgToProcess = &msgToProcessBytes
+	}
+	return *msgToProcess, nil
+}
+
+func (s *kafkaSource) processMessage(ctx context.Context, msg *kafka.Message) error {
+	span, ctx := opentracing.StartSpanFromContext(ctx, fmt.Sprintf("kafka-source-%s", s.sourceName))
+	defer span.Finish()
+	msgToProcess := &msg.Value
+	if s.confluentSchemaRegistryClient != nil {
+		b, err := convertFromConfluentMessage(s.confluentSchemaRegistryClient, s.confluentSchemaRegistryConverterType, msg)
+		if err != nil {
+			return nil
+		}
+		msgToProcess = &b
 	}
 	return s.process(
 		dfv1.ContextWithMeta(
