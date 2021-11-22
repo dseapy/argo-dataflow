@@ -24,7 +24,7 @@ metadata:
 
       # Enable Schema Registry
       confluentSchemaRegistry.url: ""
-      confluentSchemaRegistry.messageFormat: Native
+      confluentSchemaRegistry.converterType: Native
 
       [Learn about configuration](../docs/CONFIGURATION.md)
   name: dataflow-kafka-default
