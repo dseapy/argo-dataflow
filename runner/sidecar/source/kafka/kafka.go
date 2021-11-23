@@ -107,12 +107,14 @@ func convertFromConfluentMessage(client *srclient.SchemaRegistryClient,
 								 converterType dfv1.ConfluentSchemaRegistryConverterType,
 								 kafkaMessage *kafka.Message) ([]byte, error) {
 	msgToProcess := &kafkaMessage.Value
+	// Require a schema exist even if writing the raw bytes with a None converter type
+	// https://docs.confluent.io/platform/current/schema-registry/serdes-develop/index.html#how-the-naming-strategies-work
+	schemaID := binary.BigEndian.Uint32(kafkaMessage.Value[1:5])
+	schema, err := client.GetSchema(int(schemaID))
+	if err != nil {
+		return nil, err
+	}
 	if converterType != dfv1.ConfluentSchemaRegistryConverterTypeNone {
-		schemaID := binary.BigEndian.Uint32(kafkaMessage.Value[1:5])
-		schema, err := client.GetSchema(int(schemaID))
-		if err != nil {
-			return nil, err
-		}
 		schemaType := srclient.Avro
 		if schema.SchemaType() != nil {
 			schemaType = *schema.SchemaType()
